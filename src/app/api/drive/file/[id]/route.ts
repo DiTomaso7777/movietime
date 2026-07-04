@@ -50,10 +50,10 @@ const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'];
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const fileId = params.id;
+    const { id: fileId } = await params;
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const privateKey = process.env.GOOGLE_PRIVATE_KEY;
 
