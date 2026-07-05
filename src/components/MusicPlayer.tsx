@@ -69,7 +69,7 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(72);
-  const [prevVolume, setPrevVolume] = useState(72);
+  const [muted, setMuted] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [shuffle, setShuffle] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -125,6 +125,7 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
     e.preventDefault();
     volumeDraggingRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
+    setMuted(false);
     setVolume(Math.round(ratioFromPointer(e, e.currentTarget) * 100));
   };
 
@@ -163,12 +164,15 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
     }
   };
 
-  // Apply volume to the audio element
+  // Apply volume + muted state to the audio element.
+  // Note: mobile browsers (iOS Safari especially) ignore `audio.volume`
+  // (volume is hardware-controlled), but `audio.muted` works everywhere.
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume / 100;
-    }
-  }, [volume]);
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume / 100;
+    audio.muted = muted || volume === 0;
+  }, [volume, muted]);
 
   // Auto-play when the track changes while playing
   useEffect(() => {
@@ -237,15 +241,11 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
   };
 
   const toggleMute = () => {
-    if (volume > 0) {
-      setPrevVolume(volume);
-      setVolume(0);
-    } else {
-      setVolume(prevVolume || 50);
-    }
+    setMuted((m) => !m);
   };
 
-  const VolumeIcon = volume === 0 ? VolumeX : volume < 50 ? Volume1 : Volume2;
+  const VolumeIcon =
+    muted || volume === 0 ? VolumeX : volume < 50 ? Volume1 : Volume2;
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
@@ -486,8 +486,18 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
             aria-valuenow={volume}
           >
             <div style={styles.volumeTrack}>
-              <div style={{ ...styles.volumeFill, width: `${volume}%` }} />
-              <div style={{ ...styles.volumeThumb, left: `${volume}%` }} />
+              <div
+                style={{
+                  ...styles.volumeFill,
+                  width: `${muted ? 0 : volume}%`,
+                }}
+              />
+              <div
+                style={{
+                  ...styles.volumeThumb,
+                  left: `${muted ? 0 : volume}%`,
+                }}
+              />
             </div>
           </div>
         </div>
