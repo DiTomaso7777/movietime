@@ -80,8 +80,62 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const barIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scrubDraggingRef = useRef(false);
 
   const track = tracks[trackIndex];
+
+  // Slider helper: converts a pointer event on a track element to a 0..1 ratio
+  const ratioFromPointer = (
+    e: React.PointerEvent<HTMLDivElement>,
+    el: HTMLDivElement
+  ) => {
+    const rect = el.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  };
+
+  const handleScrubPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (duration === 0) return;
+    e.preventDefault();
+    scrubDraggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const ratio = ratioFromPointer(e, e.currentTarget);
+    setProgress(ratio * duration);
+  };
+
+  const handleScrubPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubDraggingRef.current || duration === 0) return;
+    const ratio = ratioFromPointer(e, e.currentTarget);
+    setProgress(ratio * duration);
+  };
+
+  const handleScrubPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubDraggingRef.current) return;
+    scrubDraggingRef.current = false;
+    const audio = audioRef.current;
+    if (audio && duration > 0) {
+      const ratio = ratioFromPointer(e, e.currentTarget);
+      audio.currentTime = ratio * duration;
+      setProgress(ratio * duration);
+    }
+  };
+
+  const volumeDraggingRef = useRef(false);
+
+  const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    volumeDraggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setVolume(Math.round(ratioFromPointer(e, e.currentTarget) * 100));
+  };
+
+  const handleVolumePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!volumeDraggingRef.current) return;
+    setVolume(Math.round(ratioFromPointer(e, e.currentTarget) * 100));
+  };
+
+  const handleVolumePointerUp = () => {
+    volumeDraggingRef.current = false;
+  };
 
   const goToNext = useCallback(() => {
     if (tracks.length === 0) return;
@@ -245,7 +299,11 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
         }}
         onPause={() => setIsPlaying(false)}
         onEnded={handleEnded}
-        onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime)}
+        onTimeUpdate={(e) => {
+          if (!scrubDraggingRef.current) {
+            setProgress(e.currentTarget.currentTime);
+          }
+        }}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onError={(e) => {
           const err = e.currentTarget.error;
@@ -344,18 +402,21 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
         <div style={styles.scrubRow}>
           <span style={styles.time}>{formatTime(progress)}</span>
           <div
-            style={styles.scrubTrack}
-            onClick={(e) => {
-              const audio = audioRef.current;
-              if (!audio || duration === 0) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = (e.clientX - rect.left) / rect.width;
-              audio.currentTime = ratio * duration;
-              setProgress(ratio * duration);
-            }}
+            style={styles.scrubHit}
+            onPointerDown={handleScrubPointerDown}
+            onPointerMove={handleScrubPointerMove}
+            onPointerUp={handleScrubPointerUp}
+            onPointerCancel={handleScrubPointerUp}
+            role="slider"
+            aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={Math.floor(duration)}
+            aria-valuenow={Math.floor(progress)}
           >
-            <div style={{ ...styles.scrubFill, width: `${pct}%` }} />
-            <div style={{ ...styles.scrubThumb, left: `${pct}%` }} />
+            <div style={styles.scrubTrack}>
+              <div style={{ ...styles.scrubFill, width: `${pct}%` }} />
+              <div style={{ ...styles.scrubThumb, left: `${pct}%` }} />
+            </div>
           </div>
           <span style={styles.time}>{formatTime(duration)}</span>
         </div>
@@ -413,14 +474,21 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
             <VolumeIcon size={16} color={COLORS.muted} />
           </button>
           <div
-            style={styles.volumeTrack}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = (e.clientX - rect.left) / rect.width;
-              setVolume(Math.round(Math.min(1, Math.max(0, ratio)) * 100));
-            }}
+            style={styles.volumeHit}
+            onPointerDown={handleVolumePointerDown}
+            onPointerMove={handleVolumePointerMove}
+            onPointerUp={handleVolumePointerUp}
+            onPointerCancel={handleVolumePointerUp}
+            role="slider"
+            aria-label="Volume"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={volume}
           >
-            <div style={{ ...styles.volumeFill, width: `${volume}%` }} />
+            <div style={styles.volumeTrack}>
+              <div style={{ ...styles.volumeFill, width: `${volume}%` }} />
+              <div style={{ ...styles.volumeThumb, left: `${volume}%` }} />
+            </div>
           </div>
         </div>
 
@@ -432,6 +500,14 @@ export default function MusicPlayer({ files }: MusicPlayerProps) {
               <button
                 key={t.id}
                 onClick={() => {
+                  const audio = audioRef.current;
+                  if (i === trackIndex) {
+                    // Same track: just make sure it is playing
+                    if (audio && audio.paused) {
+                      audio.play().catch(() => setIsPlaying(false));
+                    }
+                    return;
+                  }
                   setProgress(0);
                   setTrackIndex(i);
                   setIsPlaying(true);
@@ -573,13 +649,19 @@ const styles: Record<string, React.CSSProperties> = {
     width: 34,
     flexShrink: 0,
   },
+  scrubHit: {
+    flex: 1,
+    padding: '14px 0',
+    cursor: 'pointer',
+    touchAction: 'none',
+  },
   scrubTrack: {
     position: 'relative',
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
+    width: '100%',
+    height: 5,
+    borderRadius: 3,
     background: 'rgba(255,255,255,0.12)',
-    cursor: 'pointer',
+    pointerEvents: 'none',
   },
   scrubFill: {
     position: 'absolute',
@@ -592,12 +674,12 @@ const styles: Record<string, React.CSSProperties> = {
   scrubThumb: {
     position: 'absolute',
     top: '50%',
-    width: 12,
-    height: 12,
+    width: 14,
+    height: 14,
     borderRadius: '50%',
     background: COLORS.orangeLight,
     transform: 'translate(-50%, -50%)',
-    boxShadow: '0 0 0 3px rgba(236,94,39,0.25)',
+    boxShadow: '0 0 0 4px rgba(236,94,39,0.25)',
   },
   controlsRow: {
     display: 'flex',
@@ -615,7 +697,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 6,
+    padding: 12,
+    minWidth: 44,
+    minHeight: 44,
+    touchAction: 'manipulation',
   },
   playBtn: {
     width: 62,
@@ -628,6 +713,8 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     cursor: 'pointer',
     boxShadow: '0 10px 24px -6px rgba(236,94,39,0.7)',
+    touchAction: 'manipulation',
+    flexShrink: 0,
   },
   volumeRow: {
     display: 'flex',
@@ -641,23 +728,43 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
-    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    minWidth: 40,
+    minHeight: 40,
+    touchAction: 'manipulation',
+  },
+  volumeHit: {
+    flex: 1,
+    padding: '14px 0',
+    cursor: 'pointer',
+    touchAction: 'none',
   },
   volumeTrack: {
     position: 'relative',
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
+    width: '100%',
+    height: 5,
+    borderRadius: 3,
     background: 'rgba(255,255,255,0.12)',
-    cursor: 'pointer',
+    pointerEvents: 'none',
   },
   volumeFill: {
     position: 'absolute',
     top: 0,
     left: 0,
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 3,
     background: COLORS.faint,
+  },
+  volumeThumb: {
+    position: 'absolute',
+    top: '50%',
+    width: 12,
+    height: 12,
+    borderRadius: '50%',
+    background: COLORS.muted,
+    transform: 'translate(-50%, -50%)',
   },
   queue: {
     width: '100%',
@@ -683,10 +790,11 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     background: 'transparent',
     border: 'none',
-    padding: '7px 4px',
+    padding: '11px 4px',
     borderRadius: 8,
     cursor: 'pointer',
     textAlign: 'left',
+    touchAction: 'manipulation',
   },
   queueDash: {
     width: 4,
@@ -705,8 +813,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   shareBtn: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 12,
+    right: 12,
+    zIndex: 2,
     background: 'transparent',
     border: 'none',
     color: COLORS.muted,
@@ -714,11 +823,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    padding: 8,
+    padding: 12,
+    minHeight: 44,
     borderRadius: 8,
     fontSize: 12,
     fontWeight: 500,
     transition: 'color 0.2s ease, background 0.2s ease',
+    touchAction: 'manipulation',
   },
   shareBtnHover: {
     color: COLORS.orange,
