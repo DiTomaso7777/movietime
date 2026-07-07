@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import MusicPlayer from '@/components/MusicPlayer';
+import MovieDashboard from '@/components/MovieDashboard';
+import MoviePlayer from '@/components/MoviePlayer';
 
 interface DriveFile {
   id: string;
@@ -16,6 +17,7 @@ export default function Home() {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<DriveFile | null>(null);
 
   useEffect(() => {
     async function fetchFiles() {
@@ -37,6 +39,10 @@ export default function Home() {
 
     fetchFiles();
   }, []);
+
+  const subtitleFiles = files.filter(
+    (f) => f.mimeType.includes('text') || /\.(vtt|srt)$/i.test(f.name)
+  );
 
   if (loading) {
     return (
@@ -75,5 +81,15 @@ export default function Home() {
     );
   }
 
-  return <MusicPlayer files={files} />;
+  if (selectedMovie) {
+    return (
+      <MoviePlayer
+        movie={selectedMovie}
+        subtitleFiles={subtitleFiles}
+        onBack={() => setSelectedMovie(null)}
+      />
+    );
+  }
+
+  return <MovieDashboard files={files} onSelectMovie={setSelectedMovie} />;
 }

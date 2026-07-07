@@ -105,7 +105,7 @@ export async function GET(
     // content range, content type) so the browser can stream and seek.
     const driveHeaders = response.headers as Record<string, string>;
     const headers = new Headers();
-    headers.set('Content-Type', driveHeaders['content-type'] || 'audio/mpeg');
+    headers.set('Content-Type', driveHeaders['content-type'] || 'video/mp4');
     headers.set('Accept-Ranges', 'bytes');
     headers.set('Cache-Control', 'public, max-age=31536000');
 
